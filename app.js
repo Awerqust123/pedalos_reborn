@@ -61,6 +61,7 @@ async function boot() {
   }
   await loadRefs();
   const t = [['#/', 'Дашборд'], ['#/titles', 'Тайтли'], ['#/mine', 'Мої завдання']];
+  t.push(['#/board', 'Біржа']);
   if (isAdmin()) t.push(['#/people', 'Люди']);
   $top.innerHTML = `<b>PedalosTeam</b>${t.map(([h, l]) => `<a href="${h}" data-h="${h}">${l}</a>`).join('')}
     <span class="grow"></span><span class="muted">${esc(me.display_name)}</span><button class="ghost" id="out">Вийти</button>`;
@@ -69,7 +70,7 @@ async function boot() {
 }
 
 /* ---------- роутер ---------- */
-const views = {'': dashV, titles: titlesV, title: titleV, chapter: chapterV, mine: mineV, people: peopleV};
+const views = {'': dashV, titles: titlesV, title: titleV, chapter: chapterV, mine: mineV, board: boardV, people: peopleV};
 async function route() {
   if (!me) return;
   const [, page = '', id] = location.hash.split('/');
@@ -222,6 +223,53 @@ async function peopleV() {
     const row = {user_id: u, role_key: $(`[data-r="${u}"]`).value, rank: $(`[data-k="${u}"]`).value || null};
     if (await q(db.from('user_roles').insert(row))) peopleV();
   });
+}
+
+/* ---------- біржа ---------- */
+const rv = r => ({C: 1, B: 2, A: 3, S: 4}[r] || 0);
+async function boardV() {
+  const [p, a, t, mt] = await Promise.all([
+    db.from('job_postings').select('*,titles(name)').neq('status', 'closed').order('created_at', {ascending: false}),
+    db.from('job_applications').select('*'),
+    db.from('titles').select('id,name').order('name'),
+    db.from('title_members').select('title_id').eq('user_id', me.id).eq('role_key', 'title_curator')]);
+  const mine = (mt.data || []).map(x => x.title_id);
+  const myTitles = isAdmin() ? (t.data || []) : (t.data || []).filter(x => mine.includes(x.id));
+  const work = roles.filter(r => r.kind === 'work');
+  const lab = k => roles.find(r => r.key === k)?.label || k;
+  const nm = uid => esc(profiles.find(x => x.id === uid)?.display_name || '?');
+  const AS = {pending: 'на розгляді', accepted: 'прийнято', rejected: 'відхилено'};
+  $app.innerHTML = `<h2>Біржа</h2>
+    ${myTitles.length ? `<div class="row"><select id="bt">${myTitles.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
+      <select id="br">${work.map(r => `<option value="${r.key}">${esc(r.label)}</option>`).join('')}</select>
+      <select id="bk"><option value="">будь-який ранг</option><option>C</option><option>B</option><option>A</option><option>S</option></select>
+      <input id="bn" placeholder="Опис / умови" style="flex:1;min-width:160px"><button id="bb">Опублікувати</button></div>` : ''}
+    ${(p.data || []).map(x => {
+      const ap = (a.data || []).filter(z => z.posting_id === x.id);
+      const my = ap.find(z => z.applicant_id === me.id);
+      const ur = uroles.find(u => u.user_id === me.id && u.role_key === x.role_key);
+      const manage = isAdmin() || mine.includes(x.title_id);
+      const canApply = x.status === 'open' && !manage && ur && !my && (!x.min_rank || rv(ur.rank) >= rv(x.min_rank));
+      return `<div class="card" style="margin-bottom:10px"><b>${esc(x.titles.name)}</b> · ${esc(lab(x.role_key))}
+        ${x.min_rank ? `<span class="badge">від ${x.min_rank}</span>` : ''} ${x.status === 'filled' ? '<span class="badge done">закрито</span>' : ''}
+        <p class="muted">${esc(x.note || '')}</p>
+        ${canApply ? `<button data-ap="${x.id}">Відгукнутись</button>` : ''}
+        ${my ? `<span class="badge ${my.status === 'accepted' ? 'done' : ''}">твоя заявка: ${AS[my.status]}</span>` : ''}
+        ${manage ? `${ap.map(z => `<div class="row"><span>${nm(z.applicant_id)}${z.message ? ` — <span class="muted">${esc(z.message)}</span>` : ''}</span>
+          ${z.status === 'pending' && x.status === 'open' ? `<button data-ac="${z.id}">Прийняти</button><button class="ghost" data-rj="${z.id}">Відхилити</button>` : `<span class="badge">${AS[z.status]}</span>`}</div>`).join('')}
+          <button class="ghost" data-cl="${x.id}">Закрити вакансію</button>` : ''}</div>`;
+    }).join('') || '<p class="muted">Відкритих вакансій немає</p>'}`;
+  if (myTitles.length) $('#bb').onclick = async () => {
+    const row = {title_id: $('#bt').value, role_key: $('#br').value, min_rank: $('#bk').value || null, note: $('#bn').value.trim() || null};
+    if (await q(db.from('job_postings').insert(row))) route();
+  };
+  $$('[data-ap]').forEach(b => b.onclick = async () => {
+    const message = prompt('Коротко про себе (необовʼязково):') || null;
+    if (await q(db.from('job_applications').insert({posting_id: b.dataset.ap, message}))) route();
+  });
+  $$('[data-ac]').forEach(b => b.onclick = async () => { if (await q(db.rpc('accept_application', {a: Number(b.dataset.ac)}))) route(); });
+  $$('[data-rj]').forEach(b => b.onclick = async () => { if (await q(db.from('job_applications').update({status: 'rejected'}).eq('id', b.dataset.rj))) route(); });
+  $$('[data-cl]').forEach(b => b.onclick = async () => { if (await q(db.from('job_postings').update({status: 'closed'}).eq('id', b.dataset.cl))) route(); });
 }
 
 boot();
