@@ -1,27 +1,47 @@
-:root{--bg:#0f1115;--card:#181b22;--line:#262a34;--tx:#e8eaf0;--mu:#8b92a3;--ac:#6c8cff;--ok:#3ecf8e;--warn:#f5b84a;--bad:#ff6b6b}
-@media (prefers-color-scheme:light){:root{--bg:#f5f6f9;--card:#fff;--line:#e2e5ec;--tx:#1b1e27;--mu:#6b7284}}
+:root{--bg:#0f1115;--card:#171a21;--line:#262a34;--tx:#e8eaf0;--mu:#8b92a3;--ac:#6c8cff;--ok:#3ecf8e;--warn:#f5b84a;--bad:#ff6b6b;--bar:rgba(15,17,21,.85)}
+@media (prefers-color-scheme:light){:root{--bg:#f5f6f9;--card:#fff;--line:#e2e5ec;--tx:#1b1e27;--mu:#6b7284;--bar:rgba(245,246,249,.88)}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-header{display:flex;gap:16px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-header a{color:var(--mu);text-decoration:none}
-header a.on{color:var(--tx);font-weight:600}
-.grow{flex:1}
+a{color:var(--ac)}
 main{max-width:1000px;margin:0 auto;padding:20px}
 h1,h2{margin:0 0 14px}
+h3{margin:18px 0 10px}
 .muted{color:var(--mu)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
 .narrow{max-width:360px;margin:60px auto;display:flex;flex-direction:column;gap:10px}
 input,select,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}
 button{background:var(--ac);border-color:var(--ac);color:#fff;cursor:pointer}
 button.ghost{background:transparent;color:var(--mu);border-color:var(--line)}
+label{display:inline-flex;align-items:center;gap:6px}
+summary{cursor:pointer;min-height:32px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+
+/* ---- верхня панель ---- */
+header#top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:8px;height:58px;padding:0 18px;background:var(--bar);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:9px;margin-right:14px;font-weight:700;font-size:17px;color:var(--tx);text-decoration:none}
+.brand i{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--ac),#a06cff)}
+.nav{display:flex;gap:2px}
+.nav a{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:9px;color:var(--mu);text-decoration:none;font-size:14px}
+.nav a:hover,.nav a.on{background:var(--card);color:var(--tx)}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.um{position:relative;margin-left:auto}
+.um summary{list-style:none;width:38px;height:38px;min-height:0;border-radius:50%;background:var(--ac);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600}
+.um summary::-webkit-details-marker{display:none}
+.menu{position:absolute;right:0;top:46px;min-width:210px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.menu .who{padding:8px 10px;margin-bottom:4px;color:var(--mu);font-size:13px;border-bottom:1px solid var(--line)}
+.menu a,.menu button{display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;background:none;border:0;color:var(--tx);text-align:left;text-decoration:none;font-size:15px}
+.menu a:hover,.menu button:hover{background:var(--bg)}
+.menu .mob{display:none}
+#tabs{display:none}
+
+/* ---- дашборд, таблиці, значки ---- */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
 .stats b{display:block;font-size:26px}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
 th{color:var(--mu);font-weight:500;font-size:13px}
 tr.link{cursor:pointer}
-tr.link:hover{background:var(--card)}
+tr.link:hover,tr.link:active{background:var(--card)}
 .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:4px;background:var(--line)}
 .dot.todo{background:var(--warn)}.dot.in_progress{background:var(--ac)}.dot.done{background:var(--ok)}
 .badge{padding:2px 9px;border-radius:99px;font-size:12px;background:var(--line)}
@@ -29,22 +49,27 @@ tr.link:hover{background:var(--card)}
 .badge.ok,.badge.done{background:var(--ok);color:#000}.badge.in_progress{background:var(--ac);color:#fff}
 .badge.todo{background:var(--warn);color:#000}
 .bad{color:var(--bad)}.warn{color:var(--warn)}.good{color:var(--ok)}
-.stage{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.stage{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .stage b{width:80px}
+.stg{margin-bottom:10px}
+.stg .stage:last-child{margin-bottom:0}
+input.file{flex:1;min-width:180px}
 .chip{display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:99px;background:var(--line);font-size:12px;cursor:pointer}
-a{color:var(--ac)}
+.cm{padding:10px 0;border-bottom:1px solid var(--line)}
+.filters input{flex:2;min-width:180px}.filters select{flex:1;min-width:140px}
 
-tr.link:active{background:var(--card)}
-
-/* ---------- мобільна версія ---------- */
+/* ---- телефон ---- */
 @media (max-width:640px){
   body{font-size:16px}
-  main{padding:14px 12px calc(40px + env(safe-area-inset-bottom))}
+  main{padding:14px 12px calc(86px + env(safe-area-inset-bottom))}
   h2{font-size:20px}
-  header{position:sticky;top:0;z-index:5;background:var(--bg);flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;gap:16px;padding:10px 12px;scrollbar-width:none}
-  header::-webkit-scrollbar{display:none}
-  header a{padding:8px 2px}
-  header .muted{display:none}
+  header#top{height:52px;padding:0 14px}
+  .nav{display:none}
+  .menu .mob{display:flex}
+  #tabs{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--bar);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+  #tabs a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0;font-size:11px;color:var(--mu);text-decoration:none}
+  #tabs a.on{color:var(--ac)}
+  #tabs .ic{width:23px;height:23px}
   .narrow{margin:24px auto}
   input:not([type=checkbox]),select,button{min-height:44px;font-size:16px}
   input[type=checkbox]{width:20px;height:20px}
@@ -54,19 +79,15 @@ tr.link:active{background:var(--card)}
   .stage b{width:100%}
   .stage select,.stage button{flex:1 1 100%}
   .chip{padding:7px 12px}
-  /* таблиці -> картки */
   .card:has(>table){background:none;border:0;padding:0}
   table,tbody{display:block}
   tr:has(th){display:none}
   tr{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:12px;margin-bottom:8px;background:var(--card);border:1px solid var(--line);border-radius:10px}
   td{display:block;padding:0;border:0}
-  .dash td:nth-child(1),.chs td:nth-child(1){font-weight:600}
+  td[data-l]::before{content:attr(data-l) ': ';color:var(--mu)}
+  .dash td:nth-child(1),.chs td:nth-child(1),.team td:nth-child(1){font-weight:600}
   .dash td:nth-child(2)::before{content:'розд. '}
   .dash td:nth-child(2){color:var(--mu)}
-  .dash td:nth-child(3){flex:1 0 100%}
+  .dash td:nth-child(3),.team td:nth-child(2){flex:1 0 100%}
   .chs td:nth-child(1)::before{content:'Розділ ';font-weight:400;color:var(--mu)}
 }
-
-summary{cursor:pointer;min-height:32px}
-h3{margin:18px 0 10px}
-label{display:inline-flex;align-items:center;gap:6px}

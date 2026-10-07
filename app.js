@@ -1,6 +1,6 @@
 const db = supabase.createClient(CFG.url, CFG.key);
 const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
-const $app = $('#app'), $top = $('#top');
+const $app = $('#app'), $top = $('#top'), $tabs = $('#tabs');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ST = {translate:'Переклад', clean:'Клін', edit:'Редакт', type:'Тайп', qc:'QC'};
 const STAGES = Object.keys(ST);
@@ -12,11 +12,40 @@ let me, profiles = [], roles = [], uroles = [];
 const has = k => uroles.some(u => u.user_id === me.id && u.role_key === k);
 const isAdmin = () => has('head') || has('dev');
 const q = async p => { const r = await p; if (r.error) { alert(r.error.message); return null; } return r.data ?? true; };
+const roleFits = (rk, stage, kind) => roles.some(r => r.key === rk && r.stage === stage && (!r.track || r.track === (kind === 'manga' ? 'bw' : 'color')));
+const fmtT = d => new Date(d).toLocaleString('uk-UA', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+const addDays = (d, n) => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+const parseNums = str => str.split(',').flatMap(p => {
+  p = p.trim(); const m = p.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+  if (m) { const a = +m[1], b = +m[2]; return b >= a && b - a < 100 ? Array.from({length: b - a + 1}, (_, i) => String(a + i)) : []; }
+  return p ? [p] : [];
+});
+const ICON = {
+  dash: '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>',
+  titles: '<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/>',
+  tasks: '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  board: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  team: '<path d="M18 20V10M12 20V4M6 20v-6"/>',
+  people: '<circle cx="9" cy="8" r="4"/><path d="M1 21a8 8 0 0 1 16 0"/><path d="M17 4a4 4 0 0 1 0 8M23 21a8 8 0 0 0-5-7.4"/>'
+};
+const ic = k => `<svg class="ic" viewBox="0 0 24 24">${ICON[k]}</svg>`;
+function buildNav() {
+  const N = [['#/', 'Дашборд', 'dash'], ['#/titles', 'Тайтли', 'titles'], ['#/mine', 'Завдання', 'tasks'], ['#/board', 'Біржа', 'board'], ['#/profile', 'Профіль', 'user']];
+  const X = [['#/team', 'Команда', 'team']];
+  if (isAdmin()) X.push(['#/people', 'Люди', 'people']);
+  const a = (arr, cls = '') => arr.map(([h, l, i]) => `<a href="${h}" data-h="${h}" class="${cls}">${ic(i)}<span>${l}</span></a>`).join('');
+  $top.innerHTML = `<a class="brand" href="#/"><i></i>Pedalos</a><nav class="nav">${a(N)}${a(X)}</nav>
+    <details class="um"><summary>${esc(me.display_name.slice(0, 1).toUpperCase())}</summary><div class="menu">
+    <div class="who">${esc(me.display_name)}</div>${a(X, 'mob')}<button id="out">Вийти</button></div></details>`;
+  $tabs.innerHTML = a(N);
+  $('#out').onclick = logout;
+}
 const days = d => d ? Math.ceil((new Date(d) - new Date().setHours(0,0,0,0)) / 864e5) : null;
 
 /* ---------- вхід ---------- */
 function loginView(msg = '') {
-  $top.innerHTML = '';
+  $top.innerHTML = ''; $tabs.innerHTML = '';
   $app.innerHTML = `<form class="card narrow" id="f"><h1>PedalosTeam</h1>
     ${msg ? `<p class="muted">${esc(msg)}</p>` : ''}
     <input id="n" placeholder="Імʼя (тільки для реєстрації)">
@@ -52,7 +81,7 @@ async function boot() {
   if (!session) return loginView();
   me = (await db.from('profiles').select('*').eq('id', session.user.id).single()).data;
   if (!me || !me.is_active) {
-    $top.innerHTML = '';
+    $top.innerHTML = ''; $tabs.innerHTML = '';
     $app.innerHTML = `<div class="card narrow"><h2>Акаунт чекає підтвердження</h2>
       <p class="muted">Керівництво має активувати твій профіль, тоді оновіть сторінку.</p>
       <button id="out" class="ghost">Вийти</button></div>`;
@@ -60,21 +89,17 @@ async function boot() {
     return;
   }
   await loadRefs();
-  const t = [['#/', 'Дашборд'], ['#/titles', 'Тайтли'], ['#/mine', 'Мої завдання']];
-  t.push(['#/board', 'Біржа'], ['#/profile', 'Профіль']);
-  if (isAdmin()) t.push(['#/people', 'Люди']);
-  $top.innerHTML = `<b>PedalosTeam</b>${t.map(([h, l]) => `<a href="${h}" data-h="${h}">${l}</a>`).join('')}
-    <span class="grow"></span><span class="muted">${esc(me.display_name)}</span><button class="ghost" id="out">Вийти</button>`;
-  $('#out').onclick = logout;
+  buildNav();
   route();
 }
 
 /* ---------- роутер ---------- */
-const views = {'': dashV, titles: titlesV, title: titleV, chapter: chapterV, mine: mineV, board: boardV, profile: profileV, people: peopleV};
+const views = {'': dashV, titles: titlesV, title: titleV, chapter: chapterV, mine: mineV, team: teamV, board: boardV, profile: profileV, people: peopleV};
 async function route() {
   if (!me) return;
   const [, page = '', id] = location.hash.split('/');
-  $$('#top a').forEach(a => a.classList.toggle('on', a.dataset.h === '#/' + page));
+  $$('[data-h]').forEach(a => a.classList.toggle('on', a.dataset.h === '#/' + page));
+  $('.um')?.removeAttribute('open');
   $app.innerHTML = '<p class="muted">Завантаження…</p>';
   await (views[page] || dashV)(id);
 }
@@ -84,25 +109,41 @@ window.onhashchange = route;
 async function dashV() {
   const [o, s] = await Promise.all([
     db.from('v_chapter_overview').select('*').neq('status', 'published'),
-    db.from('chapter_stages').select('chapter_id,stage,status')]);
-  const st = {};
-  (s.data || []).forEach(x => (st[x.chapter_id] ??= {})[x.stage] = x.status);
+    db.from('chapter_stages').select('chapter_id,stage,status,assignee_id')]);
+  const st = {}, who = {};
+  (s.data || []).forEach(x => {
+    (st[x.chapter_id] ??= {})[x.stage] = x.status;
+    if (x.assignee_id) (who[x.chapter_id] ??= new Set()).add(x.assignee_id);
+  });
+  const all = o.data || [];
   const pr = {late: 0, at_risk: 1, ok: 2, done: 3};
-  const rows = (o.data || []).sort((a, b) => pr[a.health] - pr[b.health] || String(a.deadline).localeCompare(String(b.deadline)));
-  const n = f => rows.filter(f).length;
+  const n = f => all.filter(f).length;
   $app.innerHTML = `<h2>Дашборд</h2><div class="stats">
     <div class="card"><b class="bad">${n(r => r.health === 'late')}</b>прострочено</div>
     <div class="card"><b class="warn">${n(r => r.health === 'at_risk')}</b>під ризиком</div>
     <div class="card"><b>${n(r => r.status === 'curator_review')}</b>чекають куратора</div>
     <div class="card"><b class="good">${n(r => r.status === 'ready_to_upload')}</b>готові до заливу</div></div>
-    <div class="card"><table class="dash"><tr><th>Тайтл</th><th>Розділ</th><th>Етапи</th><th>Дедлайн</th><th>Статус</th></tr>
+    <div class="row filters"><input id="fs" type="search" placeholder="Пошук: тайтл або розділ">
+      <select id="ft"><option value="">Усі тайтли</option>${[...new Set(all.map(r => r.title_name))].sort().map(x => `<option>${esc(x)}</option>`).join('')}</select>
+      <select id="fh"><option value="">Усі статуси</option><option value="late">прострочено</option><option value="at_risk">під ризиком</option><option value="curator_review">чекають куратора</option><option value="ready_to_upload">готові до заливу</option></select>
+      <select id="fw"><option value="">Усі виконавці</option>${profiles.filter(p => p.is_active).map(p => `<option value="${p.id}">${esc(p.display_name)}</option>`).join('')}</select></div>
+    <div class="card" id="dt"></div>`;
+  const draw = () => {
+    const f = {s: $('#fs').value.trim().toLowerCase(), t: $('#ft').value, h: $('#fh').value, w: $('#fw').value};
+    const rows = all.filter(r => (!f.s || `${r.title_name} ${r.number}`.toLowerCase().includes(f.s)) && (!f.t || r.title_name === f.t)
+      && (!f.h || r.health === f.h || r.status === f.h) && (!f.w || who[r.chapter_id]?.has(f.w)))
+      .sort((a, b) => pr[a.health] - pr[b.health] || String(a.deadline).localeCompare(String(b.deadline)));
+    $('#dt').innerHTML = `<table class="dash"><tr><th>Тайтл</th><th>Розділ</th><th>Етапи</th><th>Дедлайн</th><th>Статус</th></tr>
     ${rows.map(r => {
       const d = days(r.deadline);
       return `<tr class="link" onclick="location.hash='#/chapter/${r.chapter_id}'"><td>${esc(r.title_name)}</td><td>${esc(r.number)}</td>
       <td>${STAGES.map(k => `<i class="dot ${st[r.chapter_id]?.[k] || ''}" title="${ST[k]}: ${SS[st[r.chapter_id]?.[k]] || '—'}"></i>`).join('')}</td>
       <td>${r.deadline || '—'}${d !== null ? ` <span class="muted">(${d} дн.)</span>` : ''}</td>
       <td><span class="badge ${r.health}">${HL[r.health]}</span> <span class="muted">${CS[r.status]}</span></td></tr>`;
-    }).join('') || '<tr><td colspan="5" class="muted">Активних розділів немає</td></tr>'}</table></div>`;
+    }).join('') || '<tr><td colspan="5" class="muted">Нічого не знайдено</td></tr>'}</table>`;
+  };
+  ['#fs', '#ft', '#fh', '#fw'].forEach(i => $(i).oninput = draw);
+  draw();
 }
 
 /* ---------- тайтли ---------- */
@@ -132,13 +173,15 @@ async function titleV(id) {
   $app.innerHTML = `<h2>${esc(t.data.name)}</h2>
     <p class="muted">Куратори: ${mem.map(x => `<span class="chip" data-del="${x.user_id}">${nm(x.user_id)}${isAdmin() ? ' ✕' : ''}</span>`).join('') || '—'}</p>
     ${isAdmin() ? `<div class="row"><select id="cu">${profiles.filter(p => p.is_active).map(p => `<option value="${p.id}">${esc(p.display_name)}</option>`).join('')}</select><button id="ca" class="ghost">Додати куратора</button></div>` : ''}
-    ${manage ? `<div class="row"><input id="cn" placeholder="Номер розділу"><input id="cd" type="date"><button id="cb">Додати розділ</button></div>` : ''}
+    ${manage ? `<div class="row"><input id="cn" placeholder="Розділи: 15 або 15-20 або 15,17,20-22" style="flex:2;min-width:200px"><input id="cd" type="date" title="Дедлайн (першого)"><input id="cs" type="number" min="0" value="0" title="Дні між дедлайнами" style="width:90px" placeholder="крок"><button id="cb">Додати</button></div>` : ''}
     <div class="card"><table class="chs"><tr><th>Розділ</th><th>Дедлайн</th><th>Статус</th></tr>
     ${(c.data || []).map(r => `<tr class="link" onclick="location.hash='#/chapter/${r.chapter_id}'"><td>${esc(r.number)}</td><td>${r.deadline || '—'}</td>
       <td><span class="badge ${r.health}">${HL[r.health]}</span> <span class="muted">${CS[r.status]}</span></td></tr>`).join('') || '<tr><td colspan="3" class="muted">Розділів ще немає</td></tr>'}</table></div>`;
   if (manage) $('#cb').onclick = async () => {
-    const number = $('#cn').value.trim();
-    if (number && await q(db.from('chapters').insert({title_id: id, number, deadline: $('#cd').value || null}))) route();
+    const nums = parseNums($('#cn').value), d0 = $('#cd').value, step = +$('#cs').value || 0;
+    if (!nums.length) return alert('Вкажи номери розділів');
+    const rows = nums.map((number, i) => ({title_id: id, number, deadline: d0 ? addDays(d0, i * step) : null}));
+    if (await q(db.from('chapters').insert(rows))) route();
   };
   if (isAdmin()) {
     $('#ca').onclick = async () => { if (await q(db.from('title_members').insert({title_id: id, user_id: $('#cu').value, role_key: 'title_curator'}))) route(); };
@@ -152,27 +195,51 @@ async function titleV(id) {
 async function chapterV(id) {
   const {data: c} = await db.from('chapters').select('*,titles(id,name,kind)').eq('id', id).single();
   if (!c) return $app.innerHTML = '<p>Розділ не знайдено</p>';
-  const [s, m] = await Promise.all([
+  const [s, m, cm, ev] = await Promise.all([
     db.from('chapter_stages').select('*').eq('chapter_id', id),
-    db.from('title_members').select('*').eq('title_id', c.title_id).eq('role_key', 'title_curator')]);
+    db.from('title_members').select('*').eq('title_id', c.title_id).eq('role_key', 'title_curator'),
+    db.from('chapter_comments').select('*').eq('chapter_id', id).order('created_at'),
+    db.from('chapter_events').select('*').eq('chapter_id', id).order('created_at', {ascending: false}).limit(40)]);
+  const kind = c.titles.kind, qc = has('qc');
   const manage = isAdmin() || (m.data || []).some(x => x.user_id === me.id);
-  const track = c.titles.kind === 'manga' ? 'bw' : 'color';
-  const fits = (uid, k) => uroles.some(u => u.user_id === uid && roles.some(r => r.key === u.role_key && r.stage === k && (!r.track || r.track === track)));
+  const myR = uroles.filter(u => u.user_id === me.id);
+  const nm = uid => esc(profiles.find(p => p.id === uid)?.display_name || '—');
+  const fits = (uid, k) => uroles.some(u => u.user_id === uid && roleFits(u.role_key, k, kind));
+  const canClaim = k => myR.some(u => !u.is_trainee && roleFits(u.role_key, k, kind));
   const body = STAGES.map(k => {
     const x = (s.data || []).find(z => z.stage === k) || {};
     const cand = profiles.filter(p => p.is_active && (fits(p.id, k) || p.id === x.assignee_id));
-    const can = manage || x.assignee_id === me.id || (k === 'qc' && has('qc'));
-    const btn = can && x.status === 'todo' ? `<button data-s="${k}" data-v="in_progress">Почати</button>`
-      : can && x.status === 'in_progress' ? `<button data-s="${k}" data-v="done">Готово</button>` : '';
-    return `<div class="card stage"><b>${ST[k]}</b><span class="badge ${x.status}">${SS[x.status] || '—'}</span>
-      <select data-a="${k}" ${manage ? '' : 'disabled'}><option value="">— виконавець —</option>
-      ${cand.map(p => `<option value="${p.id}" ${p.id === x.assignee_id ? 'selected' : ''}>${esc(p.display_name)}</option>`).join('')}</select>${btn}</div>`;
+    const own = x.assignee_id === me.id, edit = manage || own || (k === 'qc' && qc);
+    const btns = [
+      edit && x.status === 'todo' ? `<button data-s="${k}" data-v="in_progress">Почати</button>` : '',
+      edit && x.status === 'in_progress' ? `<button data-s="${k}" data-v="done">Готово</button>` : '',
+      !x.assignee_id && ['waiting', 'todo'].includes(x.status) && canClaim(k) ? `<button class="ghost" data-claim="${k}">Взяти</button>` : '',
+      own && ['waiting', 'todo', 'in_progress'].includes(x.status) ? `<button class="ghost" data-rel="${k}">Відмовитись</button>` : '',
+      (manage || qc) && ['in_progress', 'done'].includes(x.status) ? `<button class="ghost" data-ret="${k}">Повернути</button>` : ''].join('');
+    return `<div class="card stg"><div class="stage"><b>${ST[k]}</b><span class="badge ${x.status}">${SS[x.status] || '—'}</span>
+      <select data-a="${k}" ${manage ? '' : 'disabled'}><option value="">— виконавець —</option>${cand.map(p => `<option value="${p.id}" ${p.id === x.assignee_id ? 'selected' : ''}>${esc(p.display_name)}</option>`).join('')}</select></div>
+      <div class="stage"><input class="file" type="url" placeholder="Посилання на файли (Drive)" value="${esc(x.file_url || '')}" data-fu="${k}" ${edit ? '' : 'disabled'}>
+      ${x.file_url ? `<a href="${esc(x.file_url)}" target="_blank" rel="noopener">Відкрити ↗</a>` : ''}</div>
+      ${btns ? `<div class="stage">${btns}</div>` : ''}</div>`;
   }).join('');
+  const cms = (cm.data || []).map(z => `<div class="cm"><div class="muted">${nm(z.author_id)} · ${fmtT(z.created_at)}${z.stage ? ` · <span class="chip">${ST[z.stage]}</span>` : ''}${z.author_id === me.id || isAdmin() ? ` · <a href="#" data-dc="${z.id}">видалити</a>` : ''}</div><div>${esc(z.body)}</div></div>`).join('') || '<p class="muted">Коментарів ще немає</p>';
+  const evT = e => {
+    const d = e.details || {};
+    if (e.action === 'approved') return 'підтвердив(ла) розділ';
+    if (e.action === 'published') return 'позначив(ла) викладеним';
+    if (d.status_from !== d.status_to) return `${ST[e.stage] || ''}: ${SS[d.status_from] || ''} → ${SS[d.status_to] || ''}`;
+    return `${ST[e.stage] || ''}: виконавець — ${d.assignee ? nm(d.assignee) : 'нікого'}`;
+  };
   const act = c.status === 'curator_review' && manage ? '<button id="ap">Підтвердити розділ</button>'
     : c.status === 'ready_to_upload' && (has('uploader') || isAdmin()) ? '<button id="pb">Позначити викладеним</button>' : '';
-  $app.innerHTML = `<p><a href="#/title/${c.title_id}">← ${esc(c.titles.name)}</a></p>
-    <h2>Розділ ${esc(c.number)}</h2>
-    <div class="row"><span class="badge">${CS[c.status]}</span> Дедлайн: <input type="date" id="dl" value="${c.deadline || ''}" ${manage ? '' : 'disabled'}> ${act}</div>${body}`;
+  $app.innerHTML = `<p><a href="#/title/${c.title_id}">← ${esc(c.titles.name)}</a></p><h2>Розділ ${esc(c.number)}</h2>
+    <div class="row"><span class="badge">${CS[c.status]}</span> Дедлайн: <input type="date" id="dl" value="${c.deadline || ''}" ${manage ? '' : 'disabled'}> ${act}</div>${body}
+    <h3>Коментарі</h3>${cms}
+    <div class="row"><select id="cs"><option value="">загальний</option>${STAGES.map(k => `<option value="${k}">${ST[k]}</option>`).join('')}</select>
+      <input id="ct" placeholder="Написати коментар…" style="flex:1;min-width:160px"><button id="cb">Надіслати</button></div>
+    <details class="card" style="margin-top:14px"><summary>Журнал змін (${(ev.data || []).length})</summary>
+    ${(ev.data || []).map(e => `<div class="muted">${fmtT(e.created_at)} · ${nm(e.actor_id)} — ${evT(e)}</div>`).join('')}</details>`;
+  const rpc = async (fn, args) => { if (await q(db.rpc(fn, args))) route(); };
   $$('[data-s]').forEach(b => b.onclick = async () => {
     if (await q(db.from('chapter_stages').update({status: b.dataset.v}).eq('chapter_id', id).eq('stage', b.dataset.s))) route();
   });
@@ -180,27 +247,72 @@ async function chapterV(id) {
     await q(db.from('chapter_stages').update({assignee_id: se.value || null}).eq('chapter_id', id).eq('stage', se.dataset.a));
     route();
   });
-  $('#dl').onchange = async e => { await q(db.from('chapters').update({deadline: e.target.value || null}).eq('id', id)); route(); };
-  if ($('#ap')) $('#ap').onclick = async () => { if (await q(db.rpc('approve_chapter', {c: Number(id)}))) route(); };
-  if ($('#pb')) $('#pb').onclick = async () => {
-    const url = prompt('Посилання на викладений розділ (можна пропустити):') || null;
-    if (await q(db.rpc('mark_published', {c: Number(id), url}))) route();
+  $$('[data-fu]').forEach(i => i.onchange = async () => {
+    await q(db.from('chapter_stages').update({file_url: i.value.trim() || null}).eq('chapter_id', id).eq('stage', i.dataset.fu));
+    route();
+  });
+  $$('[data-claim]').forEach(b => b.onclick = () => rpc('claim_stage', {c: Number(id), s: b.dataset.claim}));
+  $$('[data-rel]').forEach(b => b.onclick = () => rpc('release_stage', {c: Number(id), s: b.dataset.rel}));
+  $$('[data-ret]').forEach(b => b.onclick = () => {
+    const note = prompt('Що виправити? (коментар для виконавця)');
+    if (note !== null) rpc('return_stage', {c: Number(id), s: b.dataset.ret, note});
+  });
+  $('#cb').onclick = async () => {
+    const t = $('#ct').value.trim();
+    if (t && await q(db.from('chapter_comments').insert({chapter_id: id, stage: $('#cs').value || null, body: t}))) route();
   };
+  $$('[data-dc]').forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    if (await q(db.from('chapter_comments').delete().eq('id', a.dataset.dc))) route();
+  });
+  $('#dl').onchange = async e => { await q(db.from('chapters').update({deadline: e.target.value || null}).eq('id', id)); route(); };
+  if ($('#ap')) $('#ap').onclick = () => rpc('approve_chapter', {c: Number(id)});
+  if ($('#pb')) $('#pb').onclick = () => rpc('mark_published', {c: Number(id), url: prompt('Посилання на викладений розділ (можна пропустити):') || null});
 }
 
 /* ---------- мої завдання ---------- */
 async function mineV() {
-  const {data} = await db.from('chapter_stages').select('*,chapters(id,number,deadline,titles(name))')
-    .eq('assignee_id', me.id).in('status', ['todo', 'in_progress']);
-  $app.innerHTML = `<h2>Мої завдання</h2>${(data || []).map(x => `<div class="card stage">
-    <a href="#/chapter/${x.chapters.id}"><b style="width:auto">${esc(x.chapters.titles.name)} · розділ ${esc(x.chapters.number)}</b></a>
-    <span>${ST[x.stage]}</span><span class="badge ${x.status}">${SS[x.status]}</span>
-    <span class="muted">дедлайн: ${x.chapters.deadline || '—'}</span>
-    <button data-c="${x.chapter_id}" data-s="${x.stage}" data-v="${x.status === 'todo' ? 'in_progress' : 'done'}">${x.status === 'todo' ? 'Почати' : 'Готово'}</button></div>`).join('')
-    || '<p class="muted">Поки що завдань немає</p>'}`;
+  const [mt, fr] = await Promise.all([
+    db.from('chapter_stages').select('*,chapters(id,number,deadline,titles(name))').eq('assignee_id', me.id).in('status', ['todo', 'in_progress']),
+    db.from('chapter_stages').select('*,chapters(id,number,deadline,titles(name,kind))').is('assignee_id', null).eq('status', 'todo')]);
+  const mineR = uroles.filter(u => u.user_id === me.id && !u.is_trainee);
+  const free = (fr.data || []).filter(x => mineR.some(u => roleFits(u.role_key, x.stage, x.chapters.titles.kind)));
+  const card = (x, btn) => `<div class="card stage"><a href="#/chapter/${x.chapters.id}"><b style="width:auto">${esc(x.chapters.titles.name)} · розділ ${esc(x.chapters.number)}</b></a>
+    <span>${ST[x.stage]}</span><span class="badge ${x.status}">${SS[x.status]}</span><span class="muted">дедлайн: ${x.chapters.deadline || '—'}</span>${btn}</div>`;
+  $app.innerHTML = `<h2>Мої завдання</h2>
+    ${(mt.data || []).map(x => card(x, `<button data-c="${x.chapter_id}" data-s="${x.stage}" data-v="${x.status === 'todo' ? 'in_progress' : 'done'}">${x.status === 'todo' ? 'Почати' : 'Готово'}</button>`)).join('') || '<p class="muted">Поки що завдань немає</p>'}
+    <h3>Вільні завдання для тебе</h3>
+    ${free.map(x => card(x, `<button class="ghost" data-claim="${x.chapter_id}|${x.stage}">Взяти</button>`)).join('') || '<p class="muted">Вільних завдань немає</p>'}`;
   $$('[data-c]').forEach(b => b.onclick = async () => {
     if (await q(db.from('chapter_stages').update({status: b.dataset.v}).eq('chapter_id', b.dataset.c).eq('stage', b.dataset.s))) route();
   });
+  $$('[data-claim]').forEach(b => b.onclick = async () => {
+    const [c, st] = b.dataset.claim.split('|');
+    if (await q(db.rpc('claim_stage', {c: Number(c), s: st}))) route();
+  });
+}
+
+/* ---------- команда і навантаження ---------- */
+async function teamV() {
+  const {data} = await db.from('chapter_stages').select('assignee_id,status,done_at,chapters(deadline)').not('assignee_id', 'is', null);
+  const today = new Date().toISOString().slice(0, 10), ago = Date.now() - 30 * 864e5, A = {};
+  (data || []).forEach(x => {
+    const a = A[x.assignee_id] ??= {act: 0, prog: 0, late: 0, done: 0};
+    if (x.status === 'done') { if (x.done_at && new Date(x.done_at) > ago) a.done++; return; }
+    if (x.status === 'todo' || x.status === 'in_progress') {
+      a.act++;
+      if (x.status === 'in_progress') a.prog++;
+      if (x.chapters?.deadline && x.chapters.deadline < today) a.late++;
+    }
+  });
+  const rl = id => uroles.filter(u => u.user_id === id).map(u => (roles.find(r => r.key === u.role_key)?.label || u.role_key) + (u.rank ? ' ' + u.rank : '')).join(', ');
+  const rows = profiles.filter(p => p.is_active).map(p => ({p, ...(A[p.id] || {act: 0, prog: 0, late: 0, done: 0})}))
+    .sort((a, b) => b.act - a.act || b.done - a.done);
+  $app.innerHTML = `<h2>Команда і навантаження</h2><div class="card"><table class="team">
+    <tr><th>Людина</th><th>Ролі</th><th>Активні</th><th>В роботі</th><th>Прострочені</th><th>Зроблено за 30 днів</th></tr>
+    ${rows.map(r => `<tr><td>${esc(r.p.display_name)}</td><td class="muted">${esc(rl(r.p.id))}</td>
+      <td data-l="Активні">${r.act}</td><td data-l="В роботі">${r.prog}</td>
+      <td data-l="Прострочені" class="${r.late ? 'bad' : ''}">${r.late}</td><td data-l="За 30 днів">${r.done}</td></tr>`).join('')}</table></div>`;
 }
 
 /* ---------- люди (тільки керівництво) ---------- */
