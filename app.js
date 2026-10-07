@@ -31,39 +31,49 @@ const ICON = {
 };
 const ic = k => `<svg class="ic" viewBox="0 0 24 24">${ICON[k]}</svg>`;
 function buildNav() {
-  const N = [['#/', 'Дашборд', 'dash'], ['#/titles', 'Тайтли', 'titles'], ['#/mine', 'Завдання', 'tasks'], ['#/board', 'Біржа', 'board'], ['#/profile', 'Профіль', 'user']];
+  const N = [['#/', 'Дашборд', 'dash'], ['#/titles', 'Тайтли', 'titles'], ['#/mine', 'Завдання', 'tasks'], ['#/board', 'Біржа', 'board']];
   const X = [['#/team', 'Команда', 'team']];
   if (isAdmin()) X.push(['#/people', 'Люди', 'people']);
   const a = (arr, cls = '') => arr.map(([h, l, i]) => `<a href="${h}" data-h="${h}" class="${cls}">${ic(i)}<span>${l}</span></a>`).join('');
   $top.innerHTML = `<a class="brand" href="#/"><i></i>Pedalos</a><nav class="nav">${a(N)}${a(X)}</nav>
-    <details class="um"><summary>${esc(me.display_name.slice(0, 1).toUpperCase())}</summary><div class="menu">
-    <div class="who">${esc(me.display_name)}</div>${a(X, 'mob')}<button id="out">Вийти</button></div></details>`;
+    <details class="um"><summary>${me.avatar_url ? `<img src="${esc(me.avatar_url)}" alt="">` : esc(me.display_name.slice(0, 1).toUpperCase())}</summary><div class="menu">
+    <div class="who">${esc(me.display_name)}</div>${a([['#/profile', 'Профіль', 'user']])}${a(X, 'mob')}<button id="out">Вийти</button></div></details>`;
   $tabs.innerHTML = a(N);
   $('#out').onclick = logout;
 }
 const days = d => d ? Math.ceil((new Date(d) - new Date().setHours(0,0,0,0)) / 864e5) : null;
 
 /* ---------- вхід ---------- */
-function loginView(msg = '') {
+const errUA = m => /not confirmed/i.test(m) ? 'Спочатку підтверди email за листом'
+  : /invalid login/i.test(m) ? 'Невірний email або пароль'
+  : /already registered/i.test(m) ? 'Цей email уже зареєстровано. Спробуй увійти'
+  : /password/i.test(m) ? 'Пароль має містити щонайменше 6 символів' : m;
+function loginView(msg = '', mode = 'in', good = false) {
+  const reg = mode === 'up';
   $top.innerHTML = ''; $tabs.innerHTML = '';
   $app.innerHTML = `<form class="card narrow" id="f"><h1>PedalosTeam</h1>
-    ${msg ? `<p class="muted">${esc(msg)}</p>` : ''}
-    <input id="n" placeholder="Імʼя (тільки для реєстрації)">
-    <input id="e" type="email" placeholder="Email">
-    <input id="p" type="password" placeholder="Пароль (від 6 символів)">
-    <div class="row"><button>Увійти</button><button type="button" id="reg" class="ghost">Реєстрація</button></div></form>`;
-  const v = () => ({email: $('#e').value.trim(), password: $('#p').value});
+    <h2 class="mode">${reg ? 'Реєстрація' : 'Вхід'}</h2>
+    <p class="note ${good ? 'good' : ''}" id="nt" ${msg ? '' : 'hidden'}>${esc(msg)}</p>
+    ${reg ? '<input id="n" placeholder="Імʼя (так тебе бачитиме команда)" autocomplete="nickname">' : ''}
+    <input id="e" type="email" placeholder="Email" autocomplete="email">
+    <input id="p" type="password" placeholder="Пароль (від 6 символів)" autocomplete="${reg ? 'new-password' : 'current-password'}">
+    <button>${reg ? 'Створити акаунт' : 'Увійти'}</button>
+    <p class="muted switch">${reg ? 'Вже є акаунт? <a href="#" id="sw">Увійти</a>' : 'Немає акаунта? <a href="#" id="sw">Зареєструватися</a>'}</p></form>`;
+  const say = t => { const n = $('#nt'); n.classList.remove('good'); n.textContent = t; n.hidden = !t; };
+  $('#sw').onclick = ev => { ev.preventDefault(); loginView('', reg ? 'in' : 'up'); };
   $('#f').onsubmit = async ev => {
     ev.preventDefault();
-    const {error} = await db.auth.signInWithPassword(v());
-    error ? loginView(error.message) : boot();
-  };
-  $('#reg').onclick = async () => {
+    const email = $('#e').value.trim(), password = $('#p').value;
+    if (!email || !password) return say('Вкажи email і пароль');
+    if (!reg) {
+      const {error} = await db.auth.signInWithPassword({email, password});
+      return error ? say(errUA(error.message)) : boot();
+    }
     const name = $('#n').value.trim();
-    if (!name) return loginView('Вкажи імʼя для реєстрації');
-    const {data, error} = await db.auth.signUp({...v(), options: {data: {display_name: name}}});
-    if (error) return loginView(error.message);
-    data.session ? boot() : loginView('Перевір пошту для підтвердження, потім увійди.');
+    if (!name) return say('Вкажи імʼя');
+    const {data, error} = await db.auth.signUp({email, password, options: {data: {display_name: name}}});
+    if (error) return say(errUA(error.message));
+    data.session ? boot() : loginView('Акаунт створено. Підтверди email за листом і увійди.', 'in', true);
   };
 }
 const logout = async () => { await db.auth.signOut(); me = null; location.hash = ''; loginView(); };
