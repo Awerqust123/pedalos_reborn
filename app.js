@@ -61,7 +61,7 @@ async function boot() {
   }
   await loadRefs();
   const t = [['#/', 'Дашборд'], ['#/titles', 'Тайтли'], ['#/mine', 'Мої завдання']];
-  t.push(['#/board', 'Біржа']);
+  t.push(['#/board', 'Біржа'], ['#/profile', 'Профіль']);
   if (isAdmin()) t.push(['#/people', 'Люди']);
   $top.innerHTML = `<b>PedalosTeam</b>${t.map(([h, l]) => `<a href="${h}" data-h="${h}">${l}</a>`).join('')}
     <span class="grow"></span><span class="muted">${esc(me.display_name)}</span><button class="ghost" id="out">Вийти</button>`;
@@ -70,7 +70,7 @@ async function boot() {
 }
 
 /* ---------- роутер ---------- */
-const views = {'': dashV, titles: titlesV, title: titleV, chapter: chapterV, mine: mineV, board: boardV, people: peopleV};
+const views = {'': dashV, titles: titlesV, title: titleV, chapter: chapterV, mine: mineV, board: boardV, profile: profileV, people: peopleV};
 async function route() {
   if (!me) return;
   const [, page = '', id] = location.hash.split('/');
@@ -95,7 +95,7 @@ async function dashV() {
     <div class="card"><b class="warn">${n(r => r.health === 'at_risk')}</b>під ризиком</div>
     <div class="card"><b>${n(r => r.status === 'curator_review')}</b>чекають куратора</div>
     <div class="card"><b class="good">${n(r => r.status === 'ready_to_upload')}</b>готові до заливу</div></div>
-    <div class="card"><table><tr><th>Тайтл</th><th>Розділ</th><th>Етапи</th><th>Дедлайн</th><th>Статус</th></tr>
+    <div class="card"><table class="dash"><tr><th>Тайтл</th><th>Розділ</th><th>Етапи</th><th>Дедлайн</th><th>Статус</th></tr>
     ${rows.map(r => {
       const d = days(r.deadline);
       return `<tr class="link" onclick="location.hash='#/chapter/${r.chapter_id}'"><td>${esc(r.title_name)}</td><td>${esc(r.number)}</td>
@@ -133,7 +133,7 @@ async function titleV(id) {
     <p class="muted">Куратори: ${mem.map(x => `<span class="chip" data-del="${x.user_id}">${nm(x.user_id)}${isAdmin() ? ' ✕' : ''}</span>`).join('') || '—'}</p>
     ${isAdmin() ? `<div class="row"><select id="cu">${profiles.filter(p => p.is_active).map(p => `<option value="${p.id}">${esc(p.display_name)}</option>`).join('')}</select><button id="ca" class="ghost">Додати куратора</button></div>` : ''}
     ${manage ? `<div class="row"><input id="cn" placeholder="Номер розділу"><input id="cd" type="date"><button id="cb">Додати розділ</button></div>` : ''}
-    <div class="card"><table><tr><th>Розділ</th><th>Дедлайн</th><th>Статус</th></tr>
+    <div class="card"><table class="chs"><tr><th>Розділ</th><th>Дедлайн</th><th>Статус</th></tr>
     ${(c.data || []).map(r => `<tr class="link" onclick="location.hash='#/chapter/${r.chapter_id}'"><td>${esc(r.number)}</td><td>${r.deadline || '—'}</td>
       <td><span class="badge ${r.health}">${HL[r.health]}</span> <span class="muted">${CS[r.status]}</span></td></tr>`).join('') || '<tr><td colspan="3" class="muted">Розділів ще немає</td></tr>'}</table></div>`;
   if (manage) $('#cb').onclick = async () => {
@@ -209,9 +209,11 @@ async function peopleV() {
   const lab = k => roles.find(r => r.key === k)?.label || k;
   $app.innerHTML = `<h2>Люди</h2>${profiles.map(p => `<div class="card" style="margin-bottom:8px">
     <label><input type="checkbox" data-act="${p.id}" ${p.is_active ? 'checked' : ''}> <b>${esc(p.display_name)}</b></label>
-    <div>${uroles.filter(u => u.user_id === p.id).map(u => `<span class="chip" data-ur="${p.id}|${u.role_key}">${esc(lab(u.role_key))}${u.rank ? ' · ' + u.rank : ''} ✕</span>`).join('')}</div>
+    <div>${uroles.filter(u => u.user_id === p.id).map(u => `<span class="chip" data-ur="${p.id}|${u.role_key}">${esc(lab(u.role_key))}${u.rank ? ' · ' + u.rank : ''}${u.is_trainee ? ' · учень' : ''}${u.is_direction_curator ? ' · куратор' : ''} ✕</span>`).join('')}</div>
     <div class="row" style="margin:6px 0 0"><select data-r="${p.id}">${roles.map(r => `<option value="${r.key}">${esc(r.label)}</option>`).join('')}</select>
     <select data-k="${p.id}"><option value="">без рангу</option><option>C</option><option>B</option><option>A</option><option>S</option></select>
+    <label><input type="checkbox" data-t="${p.id}"> учень</label><label><input type="checkbox" data-c="${p.id}"> куратор напряму</label>
+    <select data-m="${p.id}"><option value="">наставник</option>${profiles.filter(x => x.is_active && x.id !== p.id).map(x => `<option value="${x.id}">${esc(x.display_name)}</option>`).join('')}</select>
     <button class="ghost" data-add="${p.id}">+ роль</button></div></div>`).join('')}`;
   $$('[data-act]').forEach(c => c.onchange = async () => { await q(db.from('profiles').update({is_active: c.checked}).eq('id', c.dataset.act)); });
   $$('[data-ur]').forEach(c => c.onclick = async () => {
@@ -220,7 +222,9 @@ async function peopleV() {
   });
   $$('[data-add]').forEach(b => b.onclick = async () => {
     const u = b.dataset.add;
-    const row = {user_id: u, role_key: $(`[data-r="${u}"]`).value, rank: $(`[data-k="${u}"]`).value || null};
+    const row = {user_id: u, role_key: $(`[data-r="${u}"]`).value, rank: $(`[data-k="${u}"]`).value || null,
+      is_trainee: $(`[data-t="${u}"]`).checked, is_direction_curator: $(`[data-c="${u}"]`).checked,
+      mentor_id: $(`[data-m="${u}"]`).value || null};
     if (await q(db.from('user_roles').insert(row))) peopleV();
   });
 }
@@ -270,6 +274,69 @@ async function boardV() {
   $$('[data-ac]').forEach(b => b.onclick = async () => { if (await q(db.rpc('accept_application', {a: Number(b.dataset.ac)}))) route(); });
   $$('[data-rj]').forEach(b => b.onclick = async () => { if (await q(db.from('job_applications').update({status: 'rejected'}).eq('id', b.dataset.rj))) route(); });
   $$('[data-cl]').forEach(b => b.onclick = async () => { if (await q(db.from('job_postings').update({status: 'closed'}).eq('id', b.dataset.cl))) route(); });
+}
+
+/* ---------- профіль і підвищення ---------- */
+async function profileV() {
+  await loadRefs();
+  const lab = k => roles.find(r => r.key === k)?.label || k;
+  const nm = uid => esc(profiles.find(x => x.id === uid)?.display_name || '?');
+  const isWork = k => roles.find(r => r.key === k)?.kind === 'work';
+  const my = uroles.filter(u => u.user_id === me.id && isWork(u.role_key));
+  const manageRoles = isAdmin() ? roles.filter(r => r.kind === 'work').map(r => r.key)
+    : uroles.filter(u => u.user_id === me.id && u.is_direction_curator).map(u => u.role_key);
+  const [rq, ru, ...chk] = await Promise.all([
+    db.from('promotion_requests').select('*').eq('status', 'pending'),
+    db.from('promotion_rules').select('*'),
+    ...my.map(u => db.rpc('check_promotion', {u: me.id, r: u.role_key}))]);
+  const reqs = rq.data || [], rules = ru.data || [];
+
+  const mineHtml = my.map((u, i) => {
+    const c = (chk[i].data || [])[0], err = chk[i].error?.message || '';
+    const pend = reqs.find(x => x.user_id === me.id && x.role_key === u.role_key);
+    let box;
+    if (pend) box = `<span class="badge todo">запит на ${pend.to_rank} на розгляді</span> <button class="ghost" data-cp="${pend.id}">Скасувати</button>`;
+    else if (err && !/max rank/.test(err)) box = `<span class="muted">${esc(err)}</span>`;
+    else if (!c) box = '<span class="muted">Максимальний ранг</span>';
+    else box = `<div class="muted">До рангу ${c.next_rank}: розділів ${c.chapters_done}/${c.chapters_needed}, днів у команді ${c.days_in_team}/${c.days_needed}${c.requirements ? '<br>' + esc(c.requirements) : ''}</div>
+      ${c.eligible ? `<button data-rp="${u.role_key}">Подати запит на ${c.next_rank}</button>` : '<span class="badge">вимоги ще не виконані</span>'}`;
+    return `<div class="card" style="margin-bottom:8px"><b>${esc(lab(u.role_key))}</b> · ${u.rank || 'без рангу'}${u.is_trainee ? ' · учень' : ''}${u.is_direction_curator ? ' · куратор напряму' : ''}${u.mentor_id ? ' · наставник: ' + nm(u.mentor_id) : ''}
+      <div style="margin-top:8px">${box}</div></div>`;
+  }).join('') || '<p class="muted">Ролей ще немає. Їх видає керівництво.</p>';
+
+  const curHtml = manageRoles.map(k => {
+    const pend = reqs.filter(x => x.role_key === k && x.user_id !== me.id);
+    return `<details class="card" style="margin-bottom:8px"><summary><b>${esc(lab(k))}</b>${pend.length ? ` <span class="badge todo">запитів: ${pend.length}</span>` : ''}</summary>
+      ${pend.map(x => `<div class="row" style="margin-top:8px"><span>${nm(x.user_id)}: ${x.from_rank || 'учень'} → ${x.to_rank}
+        <span class="muted">(розділів ${x.stats?.chapters ?? '?'}, днів ${x.stats?.days_in_team ?? '?'})</span>${x.message ? ' — ' + esc(x.message) : ''}</span>
+        <button data-dy="${x.id}">Схвалити</button><button class="ghost" data-dn="${x.id}">Відхилити</button></div>`).join('')}
+      <p class="muted">Правила підвищення (розділів / днів / додаткові вимоги):</p>
+      ${['C', 'B', 'A', 'S'].map(r => {
+        const z = rules.find(y => y.role_key === k && y.to_rank === r) || {};
+        return `<div class="row"><b style="width:24px">${r}</b>
+          <input type="number" min="0" value="${z.min_chapters ?? 0}" data-f="${k}|${r}|c" style="width:80px">
+          <input type="number" min="0" value="${z.min_days ?? 0}" data-f="${k}|${r}|d" style="width:80px">
+          <input placeholder="Додаткові вимоги" value="${esc(z.requirements || '')}" data-f="${k}|${r}|t" style="flex:1;min-width:140px">
+          <button class="ghost" data-sr="${k}|${r}">Зберегти</button></div>`;
+      }).join('')}</details>`;
+  }).join('');
+
+  $app.innerHTML = `<h2>Профіль</h2><p class="muted">${esc(me.display_name)}</p>
+    <h3>Мої ролі</h3>${mineHtml}${curHtml ? `<h3>Куратору напряму</h3>${curHtml}` : ''}`;
+
+  $$('[data-rp]').forEach(b => b.onclick = async () => {
+    const msg = prompt('Коментар до запиту (необовʼязково):') || null;
+    if (await q(db.rpc('request_promotion', {r: b.dataset.rp, msg}))) profileV();
+  });
+  $$('[data-cp]').forEach(b => b.onclick = async () => { if (await q(db.rpc('cancel_promotion', {req: Number(b.dataset.cp)}))) profileV(); });
+  $$('[data-dy]').forEach(b => b.onclick = async () => { if (await q(db.rpc('decide_promotion', {req: Number(b.dataset.dy), approve: true}))) profileV(); });
+  $$('[data-dn]').forEach(b => b.onclick = async () => { if (await q(db.rpc('decide_promotion', {req: Number(b.dataset.dn), approve: false}))) profileV(); });
+  $$('[data-sr]').forEach(b => b.onclick = async () => {
+    const [k, r] = b.dataset.sr.split('|');
+    const f = s => $(`[data-f="${k}|${r}|${s}"]`).value;
+    const row = {role_key: k, to_rank: r, min_chapters: +f('c') || 0, min_days: +f('d') || 0, requirements: f('t').trim() || null, updated_at: new Date().toISOString()};
+    if (await q(db.from('promotion_rules').upsert(row))) b.textContent = 'Збережено ✓';
+  });
 }
 
 boot();

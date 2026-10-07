@@ -33,3 +33,40 @@ tr.link:hover{background:var(--card)}
 .stage b{width:80px}
 .chip{display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:99px;background:var(--line);font-size:12px;cursor:pointer}
 a{color:var(--ac)}
+
+tr.link:active{background:var(--card)}
+
+/* ---------- мобільна версія ---------- */
+@media (max-width:640px){
+  body{font-size:16px}
+  main{padding:14px 12px calc(40px + env(safe-area-inset-bottom))}
+  h2{font-size:20px}
+  header{position:sticky;top:0;z-index:5;background:var(--bg);flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;gap:16px;padding:10px 12px;scrollbar-width:none}
+  header::-webkit-scrollbar{display:none}
+  header a{padding:8px 2px}
+  header .muted{display:none}
+  .narrow{margin:24px auto}
+  input:not([type=checkbox]),select,button{min-height:44px;font-size:16px}
+  input[type=checkbox]{width:20px;height:20px}
+  .row>input,.row>select{flex:1 1 140px;min-width:0}
+  .row>button{flex:1 1 auto}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stage b{width:100%}
+  .stage select,.stage button{flex:1 1 100%}
+  .chip{padding:7px 12px}
+  /* таблиці -> картки */
+  .card:has(>table){background:none;border:0;padding:0}
+  table,tbody{display:block}
+  tr:has(th){display:none}
+  tr{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:12px;margin-bottom:8px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+  td{display:block;padding:0;border:0}
+  .dash td:nth-child(1),.chs td:nth-child(1){font-weight:600}
+  .dash td:nth-child(2)::before{content:'розд. '}
+  .dash td:nth-child(2){color:var(--mu)}
+  .dash td:nth-child(3){flex:1 0 100%}
+  .chs td:nth-child(1)::before{content:'Розділ ';font-weight:400;color:var(--mu)}
+}
+
+summary{cursor:pointer;min-height:32px}
+h3{margin:18px 0 10px}
+label{display:inline-flex;align-items:center;gap:6px}
