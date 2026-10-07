@@ -11,7 +11,17 @@ let me, profiles = [], roles = [], uroles = [];
 
 const has = k => uroles.some(u => u.user_id === me.id && u.role_key === k);
 const isAdmin = () => has('head') || has('dev');
-const q = async p => { const r = await p; if (r.error) { alert(r.error.message); return null; } return r.data ?? true; };
+const isCur = () => uroles.some(u => u.user_id === me.id && u.is_direction_curator);
+const ERR = {
+  'forbidden': 'Немає прав на цю дію',
+  'no curator for this role': 'У цьому напрямі ще немає куратора напряму. Призначте його у вкладці «Люди»',
+  'already has this role': 'У людини вже є ця роль',
+  'stage is not free': 'Цей етап уже зайнятий',
+  'role does not fit this stage': 'Твоя роль не підходить до цього етапу',
+  'requirements not met': 'Вимоги ще не виконані',
+  'only admins can change is_active': 'Змінювати доступ напряму може лише керівництво'
+};
+const q = async p => { const r = await p; if (r.error) { alert(ERR[r.error.message] || r.error.message); return null; } return r.data ?? true; };
 const roleFits = (rk, stage, kind) => roles.some(r => r.key === rk && r.stage === stage && (!r.track || r.track === (kind === 'manga' ? 'bw' : 'color')));
 const fmtT = d => new Date(d).toLocaleString('uk-UA', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
 const addDays = (d, n) => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
@@ -27,12 +37,15 @@ const ICON = {
   board: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   team: '<path d="M18 20V10M12 20V4M6 20v-6"/>',
+  plus: '<circle cx="9" cy="8" r="4"/><path d="M1 21a8 8 0 0 1 16 0"/><path d="M20 8v6M17 11h6"/>',
   people: '<circle cx="9" cy="8" r="4"/><path d="M1 21a8 8 0 0 1 16 0"/><path d="M17 4a4 4 0 0 1 0 8M23 21a8 8 0 0 0-5-7.4"/>'
 };
 const ic = k => `<svg class="ic" viewBox="0 0 24 24">${ICON[k]}</svg>`;
 function buildNav() {
   const N = [['#/', 'Дашборд', 'dash'], ['#/titles', 'Тайтли', 'titles'], ['#/mine', 'Завдання', 'tasks'], ['#/board', 'Біржа', 'board']];
   const X = [['#/team', 'Команда', 'team']];
+  const pend = profiles.filter(p => !p.is_active).length;
+  if (isAdmin() || isCur()) X.unshift(['#/newbies', `Новачки${pend ? ` <em class="cnt">${pend}</em>` : ''}`, 'plus']);
   if (isAdmin()) X.push(['#/people', 'Люди', 'people']);
   const a = (arr, cls = '') => arr.map(([h, l, i]) => `<a href="${h}" data-h="${h}" class="${cls}">${ic(i)}<span>${l}</span></a>`).join('');
   $top.innerHTML = `<a class="brand" href="#/"><i></i>Pedalos</a><nav class="nav">${a(N)}${a(X)}</nav>
@@ -104,7 +117,7 @@ async function boot() {
 }
 
 /* ---------- роутер ---------- */
-const views = {'': dashV, titles: titlesV, title: titleV, chapter: chapterV, mine: mineV, team: teamV, board: boardV, profile: profileV, people: peopleV};
+const views = {'': dashV, titles: titlesV, title: titleV, chapter: chapterV, mine: mineV, team: teamV, newbies: newbiesV, board: boardV, profile: profileV, people: peopleV};
 async function route() {
   if (!me) return;
   const [, page = '', id] = location.hash.split('/');
@@ -323,6 +336,22 @@ async function teamV() {
     ${rows.map(r => `<tr><td>${esc(r.p.display_name)}</td><td class="muted">${esc(rl(r.p.id))}</td>
       <td data-l="Активні">${r.act}</td><td data-l="В роботі">${r.prog}</td>
       <td data-l="Прострочені" class="${r.late ? 'bad' : ''}">${r.late}</td><td data-l="За 30 днів">${r.done}</td></tr>`).join('')}</table></div>`;
+}
+
+/* ---------- новачки (куратори і керівництво) ---------- */
+async function newbiesV() {
+  await loadRefs();
+  if (!(isAdmin() || isCur())) return $app.innerHTML = '<p>Немає доступу</p>';
+  const mine = roles.filter(r => r.kind === 'work' && (isAdmin() || uroles.some(u => u.user_id === me.id && u.is_direction_curator && u.role_key === r.key)));
+  const pend = profiles.filter(p => !p.is_active);
+  $app.innerHTML = `<h2>Новачки</h2>
+    <p class="muted">Нові акаунти, що чекають підтвердження. «Прийняти учнем» відкриває доступ і ставить людину учнем у вибраному напрямі, наставником стає куратор напряму.</p>
+    ${pend.map(p => `<div class="card" style="margin-bottom:8px"><b>${esc(p.display_name)}</b> <span class="muted">· зареєстровано ${fmtT(p.created_at)}</span>
+      <div class="row" style="margin:8px 0 0"><select data-nr="${p.id}">${mine.map(r => `<option value="${r.key}">${esc(r.label)}</option>`).join('')}</select>
+      <button data-ok="${p.id}">Прийняти учнем</button><button class="ghost" data-open="${p.id}">Лише відкрити доступ</button></div></div>`).join('') || '<p class="muted">Нових акаунтів немає</p>'}`;
+  const done = async res => { if (res) { await loadRefs(); buildNav(); route(); } };
+  $$('[data-ok]').forEach(b => b.onclick = async () => done(await q(db.rpc('accept_newcomer', {u: b.dataset.ok, r: $(`[data-nr="${b.dataset.ok}"]`).value}))));
+  $$('[data-open]').forEach(b => b.onclick = async () => done(await q(db.rpc('activate_user', {u: b.dataset.open}))));
 }
 
 /* ---------- люди (тільки керівництво) ---------- */

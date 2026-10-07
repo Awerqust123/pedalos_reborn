@@ -100,3 +100,5 @@ input.file{flex:1;min-width:180px}
 .switch{margin:2px 0 0;text-align:center;font-size:14px}
 .um summary{overflow:hidden}
 .um summary img{width:100%;height:100%;object-fit:cover}
+
+.cnt{font-style:normal;font-size:11px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--bad);color:#fff;display:inline-flex;align-items:center;justify-content:center}
