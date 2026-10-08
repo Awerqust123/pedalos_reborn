@@ -66,6 +66,7 @@ input.file{flex:1;min-width:180px}
   header#top{height:52px;padding:0 14px}
   .nav{display:none}
   .menu .mob{display:flex}
+  .menu .desk{display:none}
   #tabs{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--bar);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
   #tabs a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0;font-size:11px;color:var(--mu);text-decoration:none}
   #tabs a.on{color:var(--ac)}
@@ -102,3 +103,8 @@ input.file{flex:1;min-width:180px}
 .um summary img{width:100%;height:100%;object-fit:cover}
 
 .cnt{font-style:normal;font-size:11px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--bad);color:#fff;display:inline-flex;align-items:center;justify-content:center}
+
+.um.pn::after{content:'';position:absolute;top:-1px;right:-1px;width:12px;height:12px;border-radius:50%;background:var(--bad);border:2px solid var(--bg);pointer-events:none}
+
+.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
+h4{margin:16px 0 8px;color:var(--mu);font-weight:600}

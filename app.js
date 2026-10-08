@@ -19,9 +19,13 @@ const ERR = {
   'stage is not free': 'Цей етап уже зайнятий',
   'role does not fit this stage': 'Твоя роль не підходить до цього етапу',
   'requirements not met': 'Вимоги ще не виконані',
-  'only admins can change is_active': 'Змінювати доступ напряму може лише керівництво'
+  'only admins can change is_active': 'Змінювати доступ напряму може лише керівництво',
+  'not a trainee': 'Ця людина вже не учень',
+  'user is not only a trainee': 'Видалити можна лише акаунт, у якого всі ролі учнівські',
+  'cannot delete yourself': 'Не можна видалити власний акаунт'
 };
-const q = async p => { const r = await p; if (r.error) { alert(ERR[r.error.message] || r.error.message); return null; } return r.data ?? true; };
+const errText = m => ERR[m] || (/schema cache/.test(m) ? 'У базі ще немає потрібної таблиці чи функції. Виконай міграції 001–004 у Supabase (README, розділ «Запуск з нуля»)' : m);
+const q = async p => { const r = await p; if (r.error) { alert(errText(r.error.message)); return null; } return r.data ?? true; };
 const roleFits = (rk, stage, kind) => roles.some(r => r.key === rk && r.stage === stage && (!r.track || r.track === (kind === 'manga' ? 'bw' : 'color')));
 const fmtT = d => new Date(d).toLocaleString('uk-UA', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
 const addDays = (d, n) => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
@@ -49,9 +53,9 @@ function buildNav() {
   if (isAdmin()) X.push(['#/people', 'Люди', 'people']);
   const a = (arr, cls = '') => arr.map(([h, l, i]) => `<a href="${h}" data-h="${h}" class="${cls}">${ic(i)}<span>${l}</span></a>`).join('');
   $top.innerHTML = `<a class="brand" href="#/"><i></i>Pedalos</a><nav class="nav">${a(N)}${a(X)}</nav>
-    <details class="um"><summary>${me.avatar_url ? `<img src="${esc(me.avatar_url)}" alt="">` : esc(me.display_name.slice(0, 1).toUpperCase())}</summary><div class="menu">
-    <div class="who">${esc(me.display_name)}</div>${a([['#/profile', 'Профіль', 'user']])}${a(X, 'mob')}<button id="out">Вийти</button></div></details>`;
-  $tabs.innerHTML = a(N);
+    <details class="um ${(isAdmin() || isCur()) && pend ? 'pn' : ''}"><summary>${me.avatar_url ? `<img src="${esc(me.avatar_url)}" alt="">` : esc(me.display_name.slice(0, 1).toUpperCase())}</summary><div class="menu">
+    <div class="who">${esc(me.display_name)}</div>${a([['#/profile', 'Профіль', 'user']], 'desk')}${a(X, 'mob')}<button id="out">Вийти</button></div></details>`;
+  $tabs.innerHTML = a([...N, ['#/profile', 'Профіль', 'user']]);
   $('#out').onclick = logout;
 }
 const days = d => d ? Math.ceil((new Date(d) - new Date().setHours(0,0,0,0)) / 864e5) : null;
@@ -261,7 +265,8 @@ async function chapterV(id) {
     <div class="row"><select id="cs"><option value="">загальний</option>${STAGES.map(k => `<option value="${k}">${ST[k]}</option>`).join('')}</select>
       <input id="ct" placeholder="Написати коментар…" style="flex:1;min-width:160px"><button id="cb">Надіслати</button></div>
     <details class="card" style="margin-top:14px"><summary>Журнал змін (${(ev.data || []).length})</summary>
-    ${(ev.data || []).map(e => `<div class="muted">${fmtT(e.created_at)} · ${nm(e.actor_id)} — ${evT(e)}</div>`).join('')}</details>`;
+    ${(ev.data || []).map(e => `<div class="muted">${fmtT(e.created_at)} · ${nm(e.actor_id)} — ${evT(e)}</div>`).join('')}</details>
+    ${manage ? '<div class="row" style="margin-top:16px"><button class="danger" id="dc">Видалити розділ</button></div>' : ''}`;
   const rpc = async (fn, args) => { if (await q(db.rpc(fn, args))) route(); };
   $$('[data-s]').forEach(b => b.onclick = async () => {
     if (await q(db.from('chapter_stages').update({status: b.dataset.v}).eq('chapter_id', id).eq('stage', b.dataset.s))) route();
@@ -288,6 +293,13 @@ async function chapterV(id) {
     e.preventDefault();
     if (await q(db.from('chapter_comments').delete().eq('id', a.dataset.dc))) route();
   });
+  if ($('#dc')) $('#dc').onclick = async () => {
+    if (!confirm(`Видалити розділ ${c.number} разом з етапами, коментарями й журналом? Це не можна скасувати.`)) return;
+    const r = await q(db.from('chapters').delete().eq('id', id).select());
+    if (r === null) return;
+    if (r === true || !r.length) return alert('Розділ не видалено: немає прав.');
+    location.hash = '#/title/' + c.title_id;
+  };
   $('#dl').onchange = async e => { await q(db.from('chapters').update({deadline: e.target.value || null}).eq('id', id)); route(); };
   if ($('#ap')) $('#ap').onclick = () => rpc('approve_chapter', {c: Number(id)});
   if ($('#pb')) $('#pb').onclick = () => rpc('mark_published', {c: Number(id), url: prompt('Посилання на викладений розділ (можна пропустити):') || null});
@@ -338,20 +350,42 @@ async function teamV() {
       <td data-l="Прострочені" class="${r.late ? 'bad' : ''}">${r.late}</td><td data-l="За 30 днів">${r.done}</td></tr>`).join('')}</table></div>`;
 }
 
-/* ---------- новачки (куратори і керівництво) ---------- */
+/* ---------- новачки та учні (куратори і керівництво) ---------- */
 async function newbiesV() {
   await loadRefs();
   if (!(isAdmin() || isCur())) return $app.innerHTML = '<p>Немає доступу</p>';
-  const mine = roles.filter(r => r.kind === 'work' && (isAdmin() || uroles.some(u => u.user_id === me.id && u.is_direction_curator && u.role_key === r.key)));
+  const {data: ds} = await db.from('chapter_stages').select('assignee_id,stage,chapters(titles(kind))').eq('status', 'done').not('assignee_id', 'is', null);
+  const nm = uid => esc(profiles.find(p => p.id === uid)?.display_name || '—');
+  const work = roles.filter(r => r.kind === 'work');
+  const mineR = work.filter(r => isAdmin() || uroles.some(u => u.user_id === me.id && u.is_direction_curator && u.role_key === r.key));
   const pend = profiles.filter(p => !p.is_active);
-  $app.innerHTML = `<h2>Новачки</h2>
-    <p class="muted">Нові акаунти, що чекають підтвердження. «Прийняти учнем» відкриває доступ і ставить людину учнем у вибраному напрямі, наставником стає куратор напряму.</p>
+  const doneCnt = (uid, r) => (ds || []).filter(x => x.assignee_id === uid && x.stage === r.stage && roleFits(r.key, x.stage, x.chapters?.titles?.kind)).length;
+  const groups = work.map(r => ({r, list: uroles.filter(u => u.role_key === r.key && u.is_trainee)})).filter(g => g.list.length);
+  $app.innerHTML = `<h2>Новачки та учні</h2>
+    <h3>Нові акаунти</h3>
+    <p class="muted">«Прийняти учнем» відкриває доступ і ставить людину учнем у вибраному напрямі, наставником стає той, хто приймає.</p>
     ${pend.map(p => `<div class="card" style="margin-bottom:8px"><b>${esc(p.display_name)}</b> <span class="muted">· зареєстровано ${fmtT(p.created_at)}</span>
-      <div class="row" style="margin:8px 0 0"><select data-nr="${p.id}">${mine.map(r => `<option value="${r.key}">${esc(r.label)}</option>`).join('')}</select>
-      <button data-ok="${p.id}">Прийняти учнем</button><button class="ghost" data-open="${p.id}">Лише відкрити доступ</button></div></div>`).join('') || '<p class="muted">Нових акаунтів немає</p>'}`;
+      <div class="row" style="margin:8px 0 0"><select data-nr="${p.id}">${mineR.map(r => `<option value="${r.key}">${esc(r.label)}</option>`).join('')}</select>
+      <button data-ok="${p.id}">Прийняти учнем</button><button class="ghost" data-open="${p.id}">Лише відкрити доступ</button></div></div>`).join('') || '<p class="muted">Нових акаунтів немає</p>'}
+    <h3>Учні за напрямами</h3>
+    <p class="muted">Усі куратори бачать усі напрями, але діяти з учнем може лише його наставник (і керівництво).</p>
+    ${groups.map(g => `<h4>${esc(g.r.label)}</h4>${g.list.map(u => {
+      const can = isAdmin() || u.mentor_id === me.id, p = profiles.find(x => x.id === u.user_id);
+      return `<div class="card" style="margin-bottom:8px"><b>${nm(u.user_id)}</b>
+        <span class="muted">· наставник: ${nm(u.mentor_id)} · етапів зроблено: ${doneCnt(u.user_id, g.r)}${p ? ' · з ' + new Date(p.created_at).toLocaleDateString('uk-UA') : ''}</span>
+        ${can ? `<div class="row" style="margin:8px 0 0"><button data-gr="${u.user_id}|${g.r.key}">Завершити навчання → C</button><button class="danger" data-rm="${u.user_id}|${g.r.key}">Видалити акаунт</button></div>` : ''}</div>`;
+    }).join('')}`).join('') || '<p class="muted">Учнів зараз немає</p>'}`;
   const done = async res => { if (res) { await loadRefs(); buildNav(); route(); } };
   $$('[data-ok]').forEach(b => b.onclick = async () => done(await q(db.rpc('accept_newcomer', {u: b.dataset.ok, r: $(`[data-nr="${b.dataset.ok}"]`).value}))));
   $$('[data-open]').forEach(b => b.onclick = async () => done(await q(db.rpc('activate_user', {u: b.dataset.open}))));
+  $$('[data-gr]').forEach(b => b.onclick = async () => {
+    const [u, r] = b.dataset.gr.split('|');
+    if (confirm('Завершити навчання? Людина отримає ранг C у цьому напрямі.')) done(await q(db.rpc('graduate_trainee', {u, r})));
+  });
+  $$('[data-rm]').forEach(b => b.onclick = async () => {
+    const [u, r] = b.dataset.rm.split('|');
+    if (confirm('Видалити акаунт назавжди? Це не можна скасувати.')) done(await q(db.rpc('remove_trainee', {u, r})));
+  });
 }
 
 /* ---------- люди (тільки керівництво) ---------- */
