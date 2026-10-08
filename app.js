@@ -22,9 +22,14 @@ const ERR = {
   'only admins can change is_active': 'Змінювати доступ напряму може лише керівництво',
   'not a trainee': 'Ця людина вже не учень',
   'user is not only a trainee': 'Видалити можна лише акаунт, у якого всі ролі учнівські',
-  'cannot delete yourself': 'Не можна видалити власний акаунт'
+  'cannot delete yourself': 'Не можна видалити власний акаунт',
+  'only work roles have levels': 'Ранги, учні й куратори напряму бувають лише в робочих ролях',
+  'trainee needs a mentor': 'Учню потрібен наставник',
+  'trainee has no rank': 'Учень не має рангу до завершення навчання',
+  'trainee cannot be a curator': 'Учень не може бути куратором',
+  'mentor must be a curator of this role': 'Наставник має бути куратором напряму цієї ж ролі'
 };
-const errText = m => ERR[m] || (/schema cache/.test(m) ? 'У базі ще немає потрібної таблиці чи функції. Виконай міграції 001–004 у Supabase (README, розділ «Запуск з нуля»)' : m);
+const errText = m => ERR[m] || (/^curator needs rank/.test(m) ? 'Куратором напряму можна бути лише з рангом A або S' : /schema cache/.test(m) ? 'У базі ще немає потрібної таблиці чи функції. Виконай міграції 001–004 у Supabase (README, розділ «Запуск з нуля»)' : m);
 const q = async p => { const r = await p; if (r.error) { alert(errText(r.error.message)); return null; } return r.data ?? true; };
 const roleFits = (rk, stage, kind) => roles.some(r => r.key === rk && r.stage === stage && (!r.track || r.track === (kind === 'manga' ? 'bw' : 'color')));
 const fmtT = d => new Date(d).toLocaleString('uk-UA', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
@@ -392,24 +397,39 @@ async function newbiesV() {
 async function peopleV() {
   await loadRefs();
   const lab = k => roles.find(r => r.key === k)?.label || k;
+  const nm = uid => esc(profiles.find(x => x.id === uid)?.display_name || '?');
   $app.innerHTML = `<h2>Люди</h2>${profiles.map(p => `<div class="card" style="margin-bottom:8px">
     <label><input type="checkbox" data-act="${p.id}" ${p.is_active ? 'checked' : ''}> <b>${esc(p.display_name)}</b></label>
-    <div>${uroles.filter(u => u.user_id === p.id).map(u => `<span class="chip" data-ur="${p.id}|${u.role_key}">${esc(lab(u.role_key))}${u.rank ? ' · ' + u.rank : ''}${u.is_trainee ? ' · учень' : ''}${u.is_direction_curator ? ' · куратор' : ''} ✕</span>`).join('')}</div>
+    <div>${uroles.filter(u => u.user_id === p.id).map(u => `<span class="chip" data-ur="${p.id}|${u.role_key}">${esc(lab(u.role_key))}${u.rank ? ' · ' + u.rank : ''}${u.is_trainee ? ' · учень → ' + nm(u.mentor_id) : ''}${u.is_direction_curator ? ' · куратор' : ''} ✕</span>`).join('')}</div>
     <div class="row" style="margin:6px 0 0"><select data-r="${p.id}">${roles.map(r => `<option value="${r.key}">${esc(r.label)}</option>`).join('')}</select>
     <select data-k="${p.id}"><option value="">без рангу</option><option>C</option><option>B</option><option>A</option><option>S</option></select>
     <label><input type="checkbox" data-t="${p.id}"> учень</label><label><input type="checkbox" data-c="${p.id}"> куратор напряму</label>
-    <select data-m="${p.id}"><option value="">наставник</option>${profiles.filter(x => x.is_active && x.id !== p.id).map(x => `<option value="${x.id}">${esc(x.display_name)}</option>`).join('')}</select>
+    <select data-m="${p.id}"></select>
     <button class="ghost" data-add="${p.id}">+ роль</button></div></div>`).join('')}`;
+  const g = (u, a) => $(`[data-${a}="${u}"]`);
+  // форма підлаштовується під вибрану роль: рівні лише в робочих, учню обовʼязково потрібен куратор цієї ролі
+  const sync = u => {
+    const r = roles.find(x => x.key === g(u, 'r').value), work = r?.kind === 'work', tr = work && g(u, 't').checked;
+    if (!work) { g(u, 't').checked = false; g(u, 'c').checked = false; g(u, 'k').value = ''; }
+    if (tr) { g(u, 'c').checked = false; g(u, 'k').value = ''; }
+    g(u, 't').disabled = !work; g(u, 'k').disabled = !work || tr; g(u, 'c').disabled = !work || tr;
+    const cur = uroles.filter(x => x.role_key === r?.key && x.is_direction_curator && x.user_id !== u && profiles.find(y => y.id === x.user_id)?.is_active);
+    g(u, 'm').innerHTML = `<option value="">${cur.length ? 'наставник (обовʼязково)' : 'куратора ще немає'}</option>` + cur.map(x => `<option value="${x.user_id}">${nm(x.user_id)}</option>`).join('');
+    g(u, 'm').disabled = !tr;
+    g(u, 'm').style.display = tr ? '' : 'none';
+  };
+  profiles.forEach(p => { g(p.id, 'r').onchange = () => sync(p.id); g(p.id, 't').onchange = () => sync(p.id); sync(p.id); });
   $$('[data-act]').forEach(c => c.onchange = async () => { await q(db.from('profiles').update({is_active: c.checked}).eq('id', c.dataset.act)); });
   $$('[data-ur]').forEach(c => c.onclick = async () => {
     const [user_id, role_key] = c.dataset.ur.split('|');
     if (await q(db.from('user_roles').delete().match({user_id, role_key}))) peopleV();
   });
   $$('[data-add]').forEach(b => b.onclick = async () => {
-    const u = b.dataset.add;
-    const row = {user_id: u, role_key: $(`[data-r="${u}"]`).value, rank: $(`[data-k="${u}"]`).value || null,
-      is_trainee: $(`[data-t="${u}"]`).checked, is_direction_curator: $(`[data-c="${u}"]`).checked,
-      mentor_id: $(`[data-m="${u}"]`).value || null};
+    const u = b.dataset.add, r = roles.find(x => x.key === g(u, 'r').value), work = r.kind === 'work', tr = work && g(u, 't').checked;
+    const row = {user_id: u, role_key: r.key, rank: work && !tr ? g(u, 'k').value || null : null, is_trainee: tr,
+      is_direction_curator: work && !tr && g(u, 'c').checked, mentor_id: tr ? g(u, 'm').value || null : null};
+    if (tr && !row.mentor_id) return alert(g(u, 'm').options.length > 1 ? 'Обери наставника: це має бути куратор напряму цієї ролі' : 'У цьому напрямі ще немає куратора напряму. Спочатку призначте його');
+    if (row.is_direction_curator && !['A', 'S'].includes(row.rank)) return alert('Куратором напряму можна бути лише з рангом A або S');
     if (await q(db.from('user_roles').insert(row))) peopleV();
   });
 }
